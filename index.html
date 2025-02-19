@@ -129,7 +129,7 @@
             <div id="clock" class="clock"></div>
         </div>
         <div class="refresh-button">
-            <button onclick="updateData()">刷新數據</button>
+            <button onclick="fetchData()">刷新數據</button>
         </div>
         <div class="last-update" id="lastUpdate"></div>
         <div id="tableContainer"></div>
@@ -142,10 +142,8 @@
             direction: 'asc'
         };
         
-        const TARGET_URL = 'https://toilet.gigabyte.com.tw/gwc/get_entity_states';
-        const CORS_PROXY = 'https://bypass-cors.small-service.xyz/';
-        const API_URL = CORS_PROXY + '?' + TARGET_URL;
-        let isRetrying = false;
+        // API URL 被編碼以增加安全性
+        const API_URL = atob('aHR0cHM6Ly90b2lsZXQuZ2lnYWJ5dGUuY29tLnR3L2d3Yy9nZXRfZW50aXR5X3N0YXRlcw==');
 
         function updateClock() {
             const now = new Date();
@@ -165,44 +163,17 @@
         setInterval(updateClock, 1000);
         updateClock();
 
-        function updateData() {
-            if (isRetrying) return;
-            isRetrying = true;
-
-            // 創建 script 元素
-            const script = document.createElement('script');
-            script.type = 'text/javascript';
-            const callbackName = 'jsonpCallback_' + Date.now();
-            
-            // 定義回調函數
-            window[callbackName] = function(data) {
-                console.log('Received data:', data);
-                processData(data);
-                updateLastRefreshTime();
-                document.getElementById('lastUpdate').style.color = '#666';
-                isRetrying = false;
-                // 清理：刪除script標籤和回調函數
-                document.body.removeChild(script);
-                delete window[callbackName];
-            };
-
-            // 設置 URL
-            script.src = `${API_URL}?callback=${callbackName}`;
-            
-            // 設置錯誤處理
-            script.onerror = function() {
-                console.error('Failed to load data');
-                document.getElementById('lastUpdate').innerHTML = '資料更新失敗，正在重試...';
-                document.getElementById('lastUpdate').style.color = '#dc3545';
-                isRetrying = false;
-                setTimeout(updateData, 5000);
-                // 清理
-                document.body.removeChild(script);
-                delete window[callbackName];
-            };
-
-            // 添加到文檔
-            document.body.appendChild(script);
+        function fetchData() {
+            fetch(API_URL)
+                .then(response => response.json())
+                .then(data => {
+                    processData(data);
+                    updateLastRefreshTime();
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('獲取數據時發生錯誤！');
+                });
         }
 
         function updateLastRefreshTime() {
@@ -212,27 +183,27 @@
         }
 
         function processData(data) {
-            console.log('Processing data:', data); // Debug log
-            
+            // 確保所有樓層都有完整的性別數據
             currentData = _.chain(data.results)
                 .groupBy('floor')
                 .map((floorGroup, floor) => {
+                    // 創建一個包含所有性別的映射
                     const genderCounts = {
                         'Male': 0,
                         'Female': 0,
                         'Other': 0
                     };
                     
+                    // 填充實際數據
                     floorGroup.forEach(item => {
                         genderCounts[item.gender] = item.off_count;
                     });
 
+                    // 轉換為詳細資訊數組
                     const details = Object.entries(genderCounts).map(([gender, count]) => ({
                         gender,
                         count
                     }));
-
-                    console.log('Processed floor:', floor, details); // Debug log
 
                     return {
                         floor,
@@ -242,7 +213,6 @@
                 })
                 .value();
 
-            console.log('Final processed data:', currentData); // Debug log
             renderTable();
         }
 
@@ -266,7 +236,11 @@
         }
 
         function renderTable() {
-            const sortedData = currentData;
+            const sortedData = _.orderBy(
+                currentData,
+                [sortConfig.key],
+                [sortConfig.direction]
+            );
 
             const tableHtml = `
                 <table>
@@ -310,10 +284,10 @@
         }
 
         // 自動刷新（每60秒）
-        setInterval(updateData, 60000);
+        setInterval(fetchData, 60000);
 
         // 初始加載
-        document.addEventListener('DOMContentLoaded', updateData);
+        document.addEventListener('DOMContentLoaded', fetchData);
     </script>
 </body>
 </html>
