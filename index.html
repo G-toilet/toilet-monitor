@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>樓層人數統計</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.21/lodash.min.js"></script>
+    <style>
+        body {
+            font-family: 'Microsoft JhengHei', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 20px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+            position: relative;
+        }
+        .header h1 {
+            color: #333;
+            margin: 0;
+            padding: 10px 0;
+        }
+        .clock {
+            position: absolute;
+            top: 50%;
+            right: 20px;
+            transform: translateY(-50%);
+            font-size: 1.2em;
+            color: #666;
+            background: #f8f9fa;
+            padding: 8px 15px;
+            border-radius: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        @media (max-width: 768px) {
+            .clock {
+                position: static;
+                transform: none;
+                text-align: center;
+                margin-top: 10px;
+            }
+        }
+        .refresh-button {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .refresh-button button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .refresh-button button:hover {
+            background-color: #0056b3;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #f8f9fa;
+            cursor: pointer;
+        }
+        th:hover {
+            background-color: #e9ecef;
+        }
+        tr:nth-child(even) {
+            background-color: #f8f9fa;
+        }
+        .gender-tag {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 12px;
+            margin: 2px;
+            font-size: 0.9em;
+            min-width: 80px;
+            text-align: center;
+        }
+        .male {
+            background-color: #e3f2fd;
+            color: #1976d2;
+        }
+        .female {
+            background-color: #fce4ec;
+            color: #c2185b;
+        }
+        .other {
+            background-color: #f3e5f5;
+            color: #7b1fa2;
+        }
+        .zero {
+            background-color: #f5f5f5;
+            color: #999;
+        }
+        .sort-icon {
+            margin-left: 5px;
+        }
+        .last-update {
+            text-align: center;
+            color: #666;
+            font-size: 0.9em;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>樓層人數統計</h1>
+            <div id="clock" class="clock"></div>
+        </div>
+        <div class="refresh-button">
+            <button onclick="fetchData()">刷新數據</button>
+        </div>
+        <div class="last-update" id="lastUpdate"></div>
+        <div id="tableContainer"></div>
+    </div>
+
+    <script>
+        let currentData = [];
+        let sortConfig = {
+            key: 'floor',
+            direction: 'asc'
+        };
+        
+        // API URL 被編碼以增加安全性
+        const API_URL = atob('aHR0cHM6Ly90b2lsZXQuZ2lnYWJ5dGUuY29tLnR3L2d3Yy9nZXRfZW50aXR5X3N0YXRlcw==');
+
+        function updateClock() {
+            const now = new Date();
+            const options = {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false
+            };
+            document.getElementById('clock').textContent = 
+                now.toLocaleString('zh-TW', options).replace(',', '');
+        }
+
+        setInterval(updateClock, 1000);
+        updateClock();
+
+        function fetchData() {
+            fetch(API_URL)
+                .then(response => response.json())
+                .then(data => {
+                    processData(data);
+                    updateLastRefreshTime();
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('獲取數據時發生錯誤！');
+                });
+        }
+
+        function updateLastRefreshTime() {
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('zh-TW', { hour12: false });
+            document.getElementById('lastUpdate').innerHTML = `最後更新時間：${timeStr}`;
+        }
+
+        function processData(data) {
+            // 確保所有樓層都有完整的性別數據
+            currentData = _.chain(data.results)
+                .groupBy('floor')
+                .map((floorGroup, floor) => {
+                    // 創建一個包含所有性別的映射
+                    const genderCounts = {
+                        'Male': 0,
+                        'Female': 0,
+                        'Other': 0
+                    };
+                    
+                    // 填充實際數據
+                    floorGroup.forEach(item => {
+                        genderCounts[item.gender] = item.off_count;
+                    });
+
+                    // 轉換為詳細資訊數組
+                    const details = Object.entries(genderCounts).map(([gender, count]) => ({
+                        gender,
+                        count
+                    }));
+
+                    return {
+                        floor,
+                        total: _.sum(Object.values(genderCounts)),
+                        details
+                    };
+                })
+                .value();
+
+            renderTable();
+        }
+
+        function sortData(key) {
+            if (sortConfig.key === key) {
+                sortConfig.direction = sortConfig.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                sortConfig.key = key;
+                sortConfig.direction = 'asc';
+            }
+            renderTable();
+        }
+
+        function getGenderTagClass(gender, count) {
+            if (count === 0) return 'zero';
+            switch(gender.toLowerCase()) {
+                case 'male': return 'male';
+                case 'female': return 'female';
+                default: return 'other';
+            }
+        }
+
+        function renderTable() {
+            const sortedData = _.orderBy(
+                currentData,
+                [sortConfig.key],
+                [sortConfig.direction]
+            );
+
+            const tableHtml = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th onclick="sortData('floor')">
+                                樓層
+                                <span class="sort-icon">${getSortIcon('floor')}</span>
+                            </th>
+                            <th onclick="sortData('total')">
+                                總人數
+                                <span class="sort-icon">${getSortIcon('total')}</span>
+                            </th>
+                            <th>詳細資訊</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${sortedData.map(item => `
+                            <tr>
+                                <td>${item.floor}</td>
+                                <td>${item.total}</td>
+                                <td>
+                                    ${item.details.map(detail => `
+                                        <span class="gender-tag ${getGenderTagClass(detail.gender, detail.count)}">
+                                            ${detail.gender}: ${detail.count}
+                                        </span>
+                                    `).join('')}
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+
+            document.getElementById('tableContainer').innerHTML = tableHtml;
+        }
+
+        function getSortIcon(key) {
+            if (sortConfig.key !== key) return '↕️';
+            return sortConfig.direction === 'asc' ? '↑' : '↓';
+        }
+
+        // 自動刷新（每60秒）
+        setInterval(fetchData, 60000);
+
+        // 初始加載
+        document.addEventListener('DOMContentLoaded', fetchData);
+    </script>
+</body>
+</html>
